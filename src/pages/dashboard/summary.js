@@ -65,7 +65,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Employee
     const deptId = actor.department?._id || null;
 
     const [deptKpis, myPending, myApproved] = await Promise.all([
