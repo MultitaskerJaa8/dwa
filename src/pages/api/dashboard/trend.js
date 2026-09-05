@@ -20,21 +20,15 @@ export default async function handler(req, res) {
     const actor = await User.findById(decoded.sub);
     if (!actor) return res.status(401).json({ message: "Unauthorized" });
 
-    // last 6 months including current
     const months = [];
     const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(d);
-    }
+    for (let i = 5; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
 
     const keys = months.map(monthKey);
     const labels = months.map((d) => `${d.toLocaleString("en", { month: "short" })} ${d.getFullYear()}`);
 
-    const logs = await WorkLog.find({
-      employee: actor._id,
-      status: "Approved"
-    }).select("approvedScore periodMonth periodYear");
+    const logs = await WorkLog.find({ employee: actor._id, status: "Approved" })
+      .select("approvedScore periodMonth periodYear");
 
     const map = new Map(keys.map((k) => [k, { sum: 0, count: 0 }]));
     for (const r of logs) {
@@ -52,7 +46,7 @@ export default async function handler(req, res) {
     });
 
     return res.json({ labels, series });
-  } catch (e) {
+  } catch {
     return res.status(500).json({ message: "Server error" });
   }
 }
