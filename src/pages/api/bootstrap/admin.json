@@ -1,0 +1,7 @@
+{
+  "key": "YOUR_ADMIN_BOOTSTRAP_KEY",
+  "employeeId": "ADM001",
+  "name": "System Admin",
+  "email": "admin@gov.in",
+  "password": "Admin@12345"
+}
