@@ -1,61 +1,52 @@
-import { useState } from "react";
-import { useRouter } from "next/router";
-import { useAuth } from "@/context/AuthContext";
-import Link from "next/link";
+import bcrypt from "bcryptjs";
+import dbConnect from "@/lib/db";
+import User from "@/models/User";
+import { required } from "@/lib/validators";
+import { signToken, setAuthCookie } from "@/lib/auth";
 
-export default function Login() {
-  const router = useRouter();
-  const { login } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+export default async function handler(req, res) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
 
-  return (
-    <div className="min-h-screen grid place-items-center px-4">
-      <div className="w-full max-w-md card overflow-hidden">
-        <div className="card-hd">
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">Login</h1>
-          <p className="text-sm muted mt-1">Secure, role-based access (Employee / Supervisor / Admin)</p>
-        </div>
+  try {
+    if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" });
 
-        <form
-          className="card-bd space-y-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setErr("");
-            try {
-              setBusy(true);
-              await login(email, password);
-              router.push("/dashboard");
-            } catch (e) {
-              setErr(e.message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <div>
-            <div className="label">Email</div>
-            <input className="input mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@gov.in" />
-          </div>
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const { email, password } = body;
 
-          <div>
-            <div className="label">Password</div>
-            <input className="input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-          </div>
+    required(email, "email");
+    required(password, "password");
 
-          {err ? <div className="text-sm text-red-600 font-semibold">{err}</div> : null}
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ message: "JWT_SECRET missing in environment" });
+    }
 
-          <button className="btn btn-primary w-full" disabled={busy}>
-            {busy ? "Signing in..." : "Sign In"}
-          </button>
+    await dbConnect();
 
-          <div className="text-xs muted">
-            New employee? <Link className="text-blue-700 font-semibold underline" href="/register">Register</Link>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+    const user = await User.findOne({ email: String(email).toLowerCase().trim() }).populate("department");
+    if (!user) return res.status(401).json({ message: "Invalid credentials" });
+    if (user.status !== "Active") return res.status(403).json({ message: "Account inactive" });
+
+    const ok = await bcrypt.compare(String(password), user.passwordHash);
+    if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+
+    const token = signToken({ sub: user._id.toString(), role: user.role });
+    setAuthCookie(res, token);
+
+    return res.status(200).json({
+      user: {
+        id: user._id,
+        employeeId: user.employeeId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        department: user.department
+          ? { id: user.department._id, name: user.department.name, code: user.department.code }
+          : null,
+        designation: user.designation || ""
+      }
+    });
+  } catch (e) {
+    console.error("AUTH_LOGIN_ERROR:", e);
+    return res.status(500).json({ message: e.message || "Server error" });
+  }
 }
