@@ -10,14 +10,18 @@ async function upsertDepartment({ name, code }) {
   return dep;
 }
 
-async function upsertUser({ employeeId, name, email, role, password, departmentId, managerId }) {
-  let u = await User.findOne({ email });
+async function upsertUser({ employeeId, name, email, role, password, departmentId, managerId, resetPasswords }) {
+  const normalizedEmail = String(email).toLowerCase().trim();
+  let u = await User.findOne({ email: normalizedEmail });
+
+  const passwordHash = password ? await bcrypt.hash(String(password), 10) : null;
+
   if (!u) {
-    const passwordHash = await bcrypt.hash(password, 10);
+    if (!passwordHash) throw new Error(`Missing password for new user: ${normalizedEmail}`);
     u = await User.create({
       employeeId,
       name,
-      email,
+      email: normalizedEmail,
       role,
       status: "Active",
       passwordHash,
@@ -25,15 +29,20 @@ async function upsertUser({ employeeId, name, email, role, password, departmentI
       managerId: managerId || null
     });
   } else {
-    // keep existing passwordHash; update org fields
     u.employeeId = employeeId;
     u.name = name;
     u.role = role;
     u.department = departmentId || null;
     u.managerId = managerId || null;
     u.status = "Active";
+
+    // KEY FIX: reset demo passwords so login never fails
+    if (resetPasswords && passwordHash) {
+      u.passwordHash = passwordHash;
+    }
     await u.save();
   }
+
   return u;
 }
 
@@ -54,9 +63,8 @@ async function upsertKPI({ title, departmentId, weightage, targetValue, category
   return k;
 }
 
-export async function seedDemo() {
-  const ps = await upsertDepartment({ name: "Public Services Department", code: "PSD" });
-  const rev = await upsertDepartment({ name: "Revenue Department", code: "REV" });
+export async function seedDemo({ resetPasswords = true } = {}) {
+  const psd = await upsertDepartment({ name: "Public Services Department", code: "PSD" });
 
   const admin = await upsertUser({
     employeeId: "ADM001",
@@ -64,7 +72,9 @@ export async function seedDemo() {
     email: "admin@gov.in",
     role: "Admin",
     password: "Admin@12345",
-    departmentId: null
+    departmentId: null,
+    managerId: null,
+    resetPasswords
   });
 
   const supervisor = await upsertUser({
@@ -73,8 +83,9 @@ export async function seedDemo() {
     email: "supervisor@gov.in",
     role: "Supervisor",
     password: "Supervisor@12345",
-    departmentId: ps._id,
-    managerId: null
+    departmentId: psd._id,
+    managerId: null,
+    resetPasswords
   });
 
   const employee = await upsertUser({
@@ -83,13 +94,14 @@ export async function seedDemo() {
     email: "employee1@gov.in",
     role: "Employee",
     password: "Employee@12345",
-    departmentId: ps._id,
-    managerId: supervisor._id
+    departmentId: psd._id,
+    managerId: supervisor._id,
+    resetPasswords
   });
 
   const k1 = await upsertKPI({
     title: "SLA Compliance for Citizen Requests",
-    departmentId: ps._id,
+    departmentId: psd._id,
     weightage: 35,
     targetValue: 95,
     category: "Service Delivery",
@@ -99,7 +111,7 @@ export async function seedDemo() {
 
   const k2 = await upsertKPI({
     title: "Task Completion Rate (Assigned)",
-    departmentId: ps._id,
+    departmentId: psd._id,
     weightage: 35,
     targetValue: 90,
     category: "Productivity",
@@ -109,7 +121,7 @@ export async function seedDemo() {
 
   const k3 = await upsertKPI({
     title: "Attendance Compliance (Optional)",
-    departmentId: ps._id,
+    departmentId: psd._id,
     weightage: 30,
     targetValue: 96,
     category: "Compliance",
@@ -117,7 +129,6 @@ export async function seedDemo() {
     cycle: "Monthly"
   });
 
-  // add some worklogs (idempotent for current month)
   const now = new Date();
   const periodMonth = now.getMonth() + 1;
   const periodYear = now.getFullYear();
@@ -130,8 +141,8 @@ export async function seedDemo() {
         kpi: k1._id,
         periodMonth,
         periodYear,
-        taskTitle: "Resolved 28 citizen requests within SLA",
-        taskDetails: "Handled requests via portal; ensured closure notes; validated with supervisor.",
+        taskTitle: "Resolved citizen requests within SLA",
+        taskDetails: "Resolved and documented closures; verified via portal logs.",
         evidenceUrl: "https://example.com/evidence/slacompliance",
         status: "Approved",
         approvedScore: 86,
@@ -144,8 +155,8 @@ export async function seedDemo() {
         kpi: k2._id,
         periodMonth,
         periodYear,
-        taskTitle: "Completed weekly field verification tasks",
-        taskDetails: "Submitted weekly updates and summary; attached evidence links.",
+        taskTitle: "Completed assigned tasks with evidence",
+        taskDetails: "Weekly tasks completed; summary submitted with links.",
         evidenceUrl: "https://example.com/evidence/taskcompletion",
         status: "Pending",
         approvedScore: 0
@@ -156,11 +167,11 @@ export async function seedDemo() {
         periodMonth,
         periodYear,
         taskTitle: "Attendance maintained as per roster",
-        taskDetails: "No unapproved leaves; complied with reporting timelines.",
+        taskDetails: "No unapproved leaves; reporting on time.",
         evidenceUrl: "https://example.com/evidence/attendance",
         status: "Approved",
         approvedScore: 92,
-        supervisorRemarks: "Matched with attendance register extract.",
+        supervisorRemarks: "Matched with register extract.",
         reviewedBy: supervisor._id,
         reviewedAt: new Date()
       }
@@ -168,17 +179,16 @@ export async function seedDemo() {
   }
 
   return {
-    departments: [ps.code, rev.code],
-    users: {
+    departments: ["PSD"],
+    createdOrUpdated: {
       admin: admin.email,
       supervisor: supervisor.email,
       employee: employee.email
     },
-    passwords: {
+    demoPasswords: {
       admin: "Admin@12345",
       supervisor: "Supervisor@12345",
       employee: "Employee@12345"
-    },
-    note: "Seed completed. Login using above demo accounts."
+    }
   };
 }
