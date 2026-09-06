@@ -6,7 +6,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "seed": "node scripts/seed-http.js",
+    "seed": "node scripts/seed.js",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
