@@ -6,7 +6,10 @@ if (!cached) cached = global.mongoose = { conn: null, promise: null };
 
 export default async function dbConnect() {
   const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("Missing MONGODB_URI in environment");
+
+  if (!uri) {
+    throw new Error("Missing MONGODB_URI in environment (.env.local / Vercel env)");
+  }
 
   if (cached.conn) return cached.conn;
 
