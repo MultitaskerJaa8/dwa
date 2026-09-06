@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Protected from "@/components/Protected";
 import Layout from "@/components/Layout";
+import PageHeader from "@/components/PageHeader";
+import EmptyState from "@/components/EmptyState";
 import KPICard from "@/components/KPICard";
 import { api } from "@/lib/apiClient";
 import { useAuth } from "@/context/AuthContext";
@@ -12,7 +14,9 @@ export default function KPIsPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // admin create form
+  const [q, setQ] = useState("");
+
+  // admin create fields
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Service Delivery");
   const [description, setDescription] = useState("");
@@ -34,88 +38,139 @@ export default function KPIsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return kpis;
+    return kpis.filter((k) =>
+      (k.title || "").toLowerCase().includes(s) ||
+      (k.category || "").toLowerCase().includes(s) ||
+      (k.department?.name || "").toLowerCase().includes(s) ||
+      (k.department?.code || "").toLowerCase().includes(s)
+    );
+  }, [kpis, q]);
+
   return (
     <Protected>
       <Layout>
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-black">{user?.role === "Admin" ? "KPI Management" : "My Department KPIs"}</h1>
-            <p className="text-white/60 text-sm mt-1">Create, assign, and track KPI targets & weightage.</p>
-          </div>
-          <button className="btn btn-ghost" onClick={() => load().catch((e) => setErr(e.message))}>Refresh</button>
-        </div>
-
-        {err ? <div className="mt-3 text-sm text-red-300">{err}</div> : null}
-
-        {user?.role === "Admin" && (
-          <form
-            className="card mt-4 space-y-3"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setErr("");
-              try {
-                setBusy(true);
-                await api("/api/kpis", {
-                  method: "POST",
-                  body: JSON.stringify({ title, category, description, departmentId, targetValue, weightage, cycle })
-                });
-                setTitle("");
-                setDescription("");
-                await load();
-              } catch (e) {
-                setErr(e.message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <div className="font-bold">Create KPI</div>
-            <div className="grid md:grid-cols-2 gap-3">
-              <div>
-                <div className="label">Title</div>
-                <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div>
-                <div className="label">Department</div>
-                <select className="input" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-                  {departments.map((d) => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}
-                </select>
-              </div>
-              <div>
-                <div className="label">Category</div>
-                <input className="input" value={category} onChange={(e) => setCategory(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="label">Weightage %</div>
-                  <input className="input" type="number" min="1" max="100" value={weightage} onChange={(e) => setWeightage(e.target.value)} />
-                </div>
-                <div>
-                  <div className="label">Target</div>
-                  <input className="input" type="number" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <div className="label">Cycle</div>
-                <select className="input" value={cycle} onChange={(e) => setCycle(e.target.value)}>
-                  <option>Monthly</option>
-                  <option>Quarterly</option>
-                  <option>Annual</option>
-                </select>
-              </div>
-              <div>
-                <div className="label">Description</div>
-                <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
-              </div>
+        <PageHeader
+          title={user?.role === "Admin" ? "KPI Management" : "Department KPIs"}
+          description="Define measurable KPIs with targets, weightage and evaluation cycle."
+          right={
+            <div className="flex items-center gap-2">
+              <input
+                className="input w-[240px] hidden sm:block"
+                placeholder="Search KPI..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+              <button className="btn btn-ghost" onClick={() => load().catch((e) => setErr(e.message))}>
+                Refresh
+              </button>
             </div>
-            <button disabled={busy} className="btn btn-primary w-full">{busy ? "Creating..." : "Create KPI"}</button>
-          </form>
-        )}
+          }
+        />
 
-        <div className="grid md:grid-cols-2 gap-3 mt-4">
-          {kpis.map((k) => <KPICard key={k._id} kpi={k} />)}
-          {!kpis.length && <div className="card text-white/70">No KPIs found.</div>}
+        <div className="mt-3 sm:hidden">
+          <input className="input" placeholder="Search KPI..." value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+
+        {err ? <div className="mt-3 text-sm text-red-600 font-semibold">{err}</div> : null}
+
+        {user?.role === "Admin" ? (
+          <div className="card mt-4 overflow-hidden">
+            <div className="card-hd">
+              <div className="font-extrabold tracking-tight text-slate-900">Create KPI</div>
+              <div className="text-xs muted mt-1">Assign KPI to a department with measurable target and weightage.</div>
+            </div>
+
+            <form
+              className="card-bd"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setErr("");
+                try {
+                  setBusy(true);
+                  await api("/api/kpis", {
+                    method: "POST",
+                    body: JSON.stringify({ title, category, description, departmentId, targetValue, weightage, cycle })
+                  });
+                  setTitle("");
+                  setDescription("");
+                  await load();
+                } catch (e) {
+                  setErr(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="label">Title</div>
+                  <input className="input mt-1" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., SLA Compliance for Citizen Requests" />
+                </div>
+
+                <div>
+                  <div className="label">Department</div>
+                  <select className="input mt-1" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+                    {departments.map((d) => (
+                      <option key={d._id} value={d._id}>
+                        {d.name} ({d.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="label">Category</div>
+                  <input className="input mt-1" value={category} onChange={(e) => setCategory(e.target.value)} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="label">Weightage %</div>
+                    <input className="input mt-1" type="number" min="1" max="100" value={weightage} onChange={(e) => setWeightage(e.target.value)} />
+                  </div>
+                  <div>
+                    <div className="label">Target</div>
+                    <input className="input mt-1" type="number" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="label">Cycle</div>
+                  <select className="input mt-1" value={cycle} onChange={(e) => setCycle(e.target.value)}>
+                    <option>Monthly</option>
+                    <option>Quarterly</option>
+                    <option>Annual</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="label">Description</div>
+                  <input className="input mt-1" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short measurable description..." />
+                </div>
+              </div>
+
+              <button disabled={busy} className="btn btn-primary w-full mt-4">
+                {busy ? "Creating..." : "Create KPI"}
+              </button>
+            </form>
+          </div>
+        ) : null}
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filtered.map((k) => <KPICard key={k._id} kpi={k} />)}
+        </div>
+
+        {!filtered.length ? (
+          <div className="mt-4">
+            <EmptyState
+              title="No KPIs found"
+              description="Search clear karein ya admin se department KPIs configure karwayein."
+            />
+          </div>
+        ) : null}
       </Layout>
     </Protected>
   );
